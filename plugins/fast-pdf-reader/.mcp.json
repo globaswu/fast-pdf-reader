@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "fast-pdf-reader": {
+      "command": "node",
+      "args": ["./server.mjs"],
+      "cwd": "."
+    }
+  }
+}

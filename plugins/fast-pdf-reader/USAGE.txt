@@ -1,0 +1,29 @@
+FAST PDF READER 1.0.0
+
+Local desktop PDF reading with smooth scrolling, crisp cached pages and
+contextual change requests. Copyright 2026 Sen Wu. Original code: MIT.
+
+Requires Node.js 22.13 or newer on PATH and a compatible local Codex desktop
+host. Windows is the validated platform. No special Codex launcher is needed.
+
+Open a PDF with Fast PDF Reader, or use Open PDF under the ellipsis menu.
+Select text and choose Ask for change, or use Region for a figure. In supported
+hosts, Add to chat appends an unsent draft. You decide when to send.
+
+PDF rendering is local. Explicitly adding a comment transfers selected text,
+document identity/path, page coordinates and the comment to host draft/context;
+the host's privacy settings apply. The plugin has no developer-operated upload
+service or telemetry. See PRIVACY.md for detail.
+
+The single-row toolbar has outline, page entry, zoom, Find, Reload, Region and
+Comments. File-opening actions are under the ellipsis. Full-path file actions
+are available only for trusted host-opened local PDFs, and currently on Windows.
+
+Save pending comments before closing or changing the document. Viewer history
+is not persistent and does not retract comments already placed in chat.
+
+Scanned pages need an existing text layer for text selection; OCR and password-
+protected PDFs are not supported. First-time distant jumps may precede page
+cache preparation. Host annotation and draft capabilities vary by release.
+
+Install, source, support and updates: https://github.com/globaswu/fast-pdf-reader

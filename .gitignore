@@ -1,0 +1,16 @@
+/node_modules/
+/dist/
+/release/
+/.release-staging/
+*.log
+*.pftrace
+*.pdf
+*.pdfprobe
+*.wav
+*.mp3
+*.mp4
+.env
+.env.*
+.DS_Store
+Thumbs.db
+# Intentionally committed: plugins/fast-pdf-reader is the ready-to-install bundle.

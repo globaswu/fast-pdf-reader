@@ -1,0 +1,30 @@
+{
+  "name": "fast-pdf-reader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local desktop PDF reader with smooth scrolling and contextual comments.",
+  "author": "Sen Wu",
+  "license": "MIT",
+  "engines": {"node": ">=22.13.0"},
+  "repository": {"type": "git", "url": "https://github.com/globaswu/fast-pdf-reader.git"},
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs",
+    "start": "node server.mjs",
+    "bundle": "node stage-plugin.mjs",
+    "test:bundle": "node scripts/test-bundle.mjs",
+    "audit:release": "node scripts/audit-release.mjs"
+  },
+  "dependencies": {
+    "@embedpdf/pdfium": "2.15.1",
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@openai/mcp-extensions": "0.1.0",
+    "pdfjs-dist": "6.3.289",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

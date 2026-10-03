@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.wasm -text
+*.bcmap -text
+*.pfb -text
+*.ttf -text
+*.otf -text
+*.woff -text
+*.woff2 -text
+*.png -text
+*.jpg -text

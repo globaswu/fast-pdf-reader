@@ -1,0 +1,24 @@
+{
+  "name": "fast-pdf-reader",
+  "version": "1.0.0",
+  "description": "Read local PDFs with smooth continuous scrolling, crisp cached pages, early text selection and contextual change requests in Codex.",
+  "author": {"name": "Sen Wu", "url": "https://github.com/globaswu"},
+  "homepage": "https://github.com/globaswu/fast-pdf-reader",
+  "repository": "https://github.com/globaswu/fast-pdf-reader",
+  "license": "MIT",
+  "keywords": ["pdf", "reader", "local", "productivity", "codex"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Fast PDF Reader",
+    "shortDescription": "Smooth local PDF reading and contextual comments",
+    "longDescription": "A local desktop PDF reader with continuous scrolling, crisp cached page images, independent text selection, search, bookmarks and a compact single-row toolbar. Select a passage or figure to compose a contextual change request in supported Codex hosts. PDF rendering runs locally; comments and selected content enter the host only when you explicitly add a request. Requires Node.js 22.13 or newer and a compatible desktop host. Windows is the validated platform.",
+    "developerName": "Sen Wu",
+    "category": "Productivity",
+    "capabilities": ["Read local PDFs", "Search and navigate pages", "Compose contextual change requests"],
+    "websiteURL": "https://github.com/globaswu/fast-pdf-reader",
+    "supportURL": "https://github.com/globaswu/fast-pdf-reader/issues",
+    "privacyPolicyURL": "https://github.com/globaswu/fast-pdf-reader/blob/main/PRIVACY.md",
+    "defaultPrompt": ["Open Fast PDF Reader so I can read a local PDF."],
+    "brandColor": "#2868C7"
+  }
+}

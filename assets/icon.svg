@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Fast PDF Reader">
+  <rect width="128" height="128" rx="28" fill="#2868c7"/>
+  <path d="M48 24h30l19 19v61H48Z" fill="#fff"/>
+  <path d="M78 24v20h19" fill="#bdd8ff"/>
+  <path d="M27 51h39M20 65h41M28 79h30" fill="none" stroke="#b9d9ff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M65 87h18M65 95h13" fill="none" stroke="#2868c7" stroke-width="3" stroke-linecap="round"/>
+</svg>

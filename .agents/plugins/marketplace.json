@@ -1,0 +1,12 @@
+{
+  "name": "fast-pdf-reader",
+  "interface": {"displayName": "Fast PDF Reader"},
+  "plugins": [
+    {
+      "name": "fast-pdf-reader",
+      "source": {"source": "local", "path": "./plugins/fast-pdf-reader"},
+      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+      "category": "Productivity"
+    }
+  ]
+}

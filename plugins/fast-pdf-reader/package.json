@@ -1,0 +1,11 @@
+{
+  "name": "fast-pdf-reader",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "author": "Sen Wu",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

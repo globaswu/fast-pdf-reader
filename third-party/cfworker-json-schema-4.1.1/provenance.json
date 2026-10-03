@@ -1,0 +1,8 @@
+{
+  "package": "@cfworker/json-schema",
+  "version": "4.1.1",
+  "reason": "The published npm package does not include its repository license file.",
+  "npmMetadata": "https://registry.npmjs.org/@cfworker/json-schema/4.1.1",
+  "gitCommit": "5409fdc2bd144f68e8b28c61c71fcb16600000a6",
+  "licenseSource": "https://raw.githubusercontent.com/cfworker/cfworker/5409fdc2bd144f68e8b28c61c71fcb16600000a6/LICENSE.md"
+}
