@@ -1,4 +1,4 @@
-FAST PDF READER 1.0.0
+SMOOTH PDF READER 1.1.0
 
 Local desktop PDF reading with smooth scrolling, crisp cached pages and
 contextual change requests. Copyright 2026 Sen Wu. Original code: MIT.
@@ -6,12 +6,24 @@ contextual change requests. Copyright 2026 Sen Wu. Original code: MIT.
 Requires Node.js 22.13 or newer on PATH and a compatible local Codex desktop
 host. Windows is the validated platform. No special Codex launcher is needed.
 
-Open a PDF with Fast PDF Reader, or use Open PDF under the ellipsis menu.
-Select text and choose Ask for change, or use Region for a figure. In supported
-hosts, Add to chat appends an unsent draft. You decide when to send.
+Open a PDF with Smooth PDF Reader, or use Open PDF under the ellipsis menu.
+Select text and choose Ask for change, or use Region for a figure. Enter saves
+the comment; Shift+Enter adds a line. Requested selections remain highlighted
+during the reader session. Open Comments and choose Send to dialogue box to
+attach the batch as context without typing into or sending the host input.
+Keep the reader open until you send your host message.
 
-PDF rendering is local. Explicitly adding a comment transfers selected text,
-document identity/path, page coordinates and the comment to host draft/context;
+The optional Windows x64 recorder inserts offline dictation into that same
+input. Install its pinned runtime explicitly with the supplied
+scripts/install-dictation-runtime.ps1 using your approved execution procedure.
+Downloads total approximately 149 MiB and are stored under
+%LOCALAPPDATA%\SmoothPdfReader\voice-runtime, not in the plugin bundle.
+No model or recording is included in the ZIP. Nothing records on launch.
+Click the microphone to start; Stop or Enter transcribes; Cancel preserves
+typed text. Windows permissions still apply. No separate recorder window opens.
+
+PDF rendering is local. Explicit batch handoff transfers selected text,
+document identity/path, page coordinates and comments to host context;
 the host's privacy settings apply. The plugin has no developer-operated upload
 service or telemetry. See PRIVACY.md for detail.
 
@@ -19,8 +31,13 @@ The single-row toolbar has outline, page entry, zoom, Find, Reload, Region and
 Comments. File-opening actions are under the ellipsis. Full-path file actions
 are available only for trusted host-opened local PDFs, and currently on Windows.
 
-Save pending comments before closing or changing the document. Viewer history
-is not persistent and does not retract comments already placed in chat.
+Send or otherwise preserve pending comments before closing or changing the
+document. Viewer history is not persistent and cannot retract sent chat.
+Supported local files offer Open new version when changes are detected.
+Hyperlinks show hover feedback and destinations; dragging selects text.
+
+The separate hosted edition does not run the Windows recorder or perform
+operating-system file actions. Host context and change-detection support varies.
 
 Scanned pages need an existing text layer for text selection; OCR and password-
 protected PDFs are not supported. First-time distant jumps may precede page

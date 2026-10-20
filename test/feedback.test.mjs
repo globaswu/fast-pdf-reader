@@ -1,20 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {FEEDBACK_LIMITS,sourceFingerprint,intersectRects,validPdfBox,validateSelectionData,appendChangeRequest,getContextSupport,makeFeedbackContext,supportsComposerDraft,makeComposerDraft,placeSelectionPopup} from '../src/feedback.mjs';
+import {FEEDBACK_LIMITS,sourceFingerprint,intersectRects,validPdfBox,validateSelectionData,appendChangeRequest,getContextSupport,makeFeedbackContext,placeSelectionPopup} from '../src/feedback.mjs';
 
 const source={documentId:'revision-1',name:'sample.pdf',sourcePath:'C:\\example\\sample.pdf',size:12345,modifiedMs:99};
 const selection={kind:'text',text:'Exact  text\nwith line break.',boxes:[{page:7,pdfRect:[12.3,40,98,51]}]};
 const request={id:'one',source,selection,comment:'Replace this phrase.'};
 
-test('composer drafting requires its advertised capability and cannot fall back to submission',()=>{
-  assert.equal(supportsComposerDraft({sendMessage(){},getHostCapabilities:()=>({message:{text:{}}})}),false);
-  assert.equal(supportsComposerDraft({sendMessage(){},getHostCapabilities:()=>({experimental:{'openai/message':{draft:{}}}})}),true);
-  const message=makeComposerDraft(request);
-  assert.deepEqual(message._meta,{'openai/message':{target:'active',send:false}});
-  assert.equal(message.role,'user');assert.equal(message.content.length,1);
-  assert.equal(message.content[0]._meta,undefined);assert.equal(message.content[0].annotations,undefined);
-  assert.ok(message.content[0].text.includes(selection.text));assert.ok(message.content[0].text.includes(request.comment));
-  assert.ok(message.content[0].text.includes('Physical page: 7'));
+test('context batch is a titled attachment with all exact source evidence',()=>{
+  const payload=makeFeedbackContext([request]);
+  assert.equal(payload.content[0]._meta['openai/title'],'PDF comments (1) — sample.pdf');
+  assert.ok(payload.content[0].text.includes(request.comment));
+  assert.equal(JSON.parse(payload.content[0].text.split('\n').slice(1).join('\n')).requests[0].selection.text,selection.text);
+  assert.equal('_meta' in payload,false);
 });
 test('selection popup stays next to its target within the PDF viewport',()=>{
   const bounds={left:10,top:100,right:790,bottom:850};
@@ -49,11 +46,12 @@ test('queue retains multiple requests without mutating the prior queue',()=>{
   assert.equal(first.length,1);assert.equal(second.length,2);assert.equal(second[0].selection.text,selection.text);
 });
 test('queue prevents mixing PDF revisions and enforces bounds',()=>{
-  assert.throws(()=>appendChangeRequest([request],{...request,source:{...source,documentId:'other'}}),/different PDF revisions/);
+  assert.throws(()=>appendChangeRequest([request],{...request,id:'two',source:{...source,documentId:'other'}}),/different PDF revisions/);
+  assert.throws(()=>appendChangeRequest([request],request),/unique identifier/);
   assert.throws(()=>appendChangeRequest(Array(FEEDBACK_LIMITS.requests).fill(request),request),/At most/);
   assert.throws(()=>appendChangeRequest([],{...request,comment:'x'.repeat(2001)}),/2,000/);
   const long={...request,selection:{...selection,text:'x'.repeat(20000)}};
-  assert.throws(()=>appendChangeRequest([long,long],long),/60,000/);
+  assert.throws(()=>appendChangeRequest([long,{...long,id:'two'}],{...long,id:'three'}),/60,000/);
 });
 test('portable standard context support works without the optional OpenAI extension',()=>{
   const app={getHostCapabilities:()=>({updateModelContext:{text:{}}}),updateModelContext(){}};

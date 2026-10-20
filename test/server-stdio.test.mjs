@@ -27,7 +27,7 @@ test('MCP stdio exposes a read-only app contract and enforces source-scoped read
     args: [path.join(executableRoot, 'server.mjs')], cwd: executableRoot, stderr: 'pipe' });
   let stderr = '';
   transport.stderr.on('data', chunk => { stderr += chunk.toString(); });
-  const client = new Client({ name: 'fast-pdf-reader-synthetic-test', version: '1.0.0' });
+  const client = new Client({ name: 'fast-pdf-reader-synthetic-test', version: '1.1.0' });
   t.after(async () => {
     await client.close();
     assert.equal(path.dirname(path.resolve(dir)), base);
@@ -40,10 +40,10 @@ test('MCP stdio exposes a read-only app contract and enforces source-scoped read
 
   await t.test('data tools are app-only and closed-world; launch and file-action metadata are explicit', async () => {
     const { tools } = await client.listTools();
-    assert.deepEqual(tools.map(tool => tool.name).sort(), ['pdf_asset', 'pdf_info', 'pdf_launch', 'pdf_open', 'pdf_open_external', 'pdf_read']);
+    assert.deepEqual(tools.map(tool => tool.name).sort(), ['pdf_asset', 'pdf_dictation_cancel', 'pdf_dictation_heartbeat', 'pdf_dictation_info', 'pdf_dictation_start', 'pdf_dictation_status', 'pdf_dictation_stop', 'pdf_info', 'pdf_launch', 'pdf_open', 'pdf_open_external', 'pdf_read']);
     for (const tool of tools) {
       if(tool.name!=='pdf_launch') assert.deepEqual(tool._meta.ui.visibility, ['app']);
-      assert.equal(tool.annotations.readOnlyHint, tool.name!=='pdf_open_external');
+      assert.equal(tool.annotations.readOnlyHint, !['pdf_open_external','pdf_dictation_start','pdf_dictation_stop','pdf_dictation_cancel','pdf_dictation_heartbeat'].includes(tool.name));
       assert.equal(tool.annotations.destructiveHint, false);
       assert.equal(tool.annotations.openWorldHint, false);
       if (tool.name !== 'pdf_open') {
@@ -51,9 +51,75 @@ test('MCP stdio exposes a read-only app contract and enforces source-scoped read
         assert.equal(tool.inputSchema.properties?.path, undefined);
       }
     }
+    const launch = tools.find(tool => tool.name === 'pdf_launch');
+    assert.deepEqual(launch._meta['openai/ui'].entrypoints, [{ type: 'global' }, { type: 'thread' }]);
+    assert.deepEqual(launch.inputSchema.properties, {});
+    assert.deepEqual(launch.inputSchema.required ?? [], []);
+    assert.equal(launch._meta.ui.resourceUri, 'ui://fast-pdf-reader/v1-1-0/viewer.html');
     const open = tools.find(tool => tool.name === 'pdf_open');
     assert.deepEqual(open._meta['openai/ui'].entrypoints, [{ type: 'file', extensions: ['.pdf'] }]);
-    assert.equal(open._meta.ui.resourceUri, 'ui://fast-pdf-reader/v1-0-0/viewer.html');
+    assert.equal(open._meta.ui.resourceUri, 'ui://fast-pdf-reader/v1-1-0/viewer.html');
+  });
+
+  await t.test('released 1.0 viewer resource serves the current UI without accepting unknown versions', async () => {
+    const latestUri = 'ui://fast-pdf-reader/v1-1-0/viewer.html';
+    const latest = await client.readResource({ uri: latestUri });
+    assert.equal(latest.contents.length, 1);
+    const current = latest.contents[0];
+    assert.equal(current.uri, latestUri);
+    assert.equal(current.mimeType, 'text/html;profile=mcp-app');
+    assert.equal(current._meta.ui.permissions, undefined, 'native recorder must not request or alter iframe microphone permission');
+    assert.equal(typeof current.text, 'string');
+    assert.match(current.text.slice(0, 100), /<!doctype html>/i);
+    for (const uri of ['ui://fast-pdf-reader/v1-0-0/viewer.html']) {
+      const resource = await client.readResource({ uri });
+      assert.equal(resource.contents.length, 1);
+      const content = resource.contents[0];
+      assert.equal(content.uri, uri);
+      assert.equal(content.mimeType, current.mimeType);
+      assert.equal(content.text === current.text, true, `${uri} must serve the current viewer body`);
+      assert.deepEqual(content._meta, current._meta);
+    }
+    await assert.rejects(
+      client.readResource({ uri: 'ui://fast-pdf-reader/v99-99-99/viewer.html' }),
+      error => error.code === -32602 && /not found/i.test(error.message),
+    );
+  });
+
+  await t.test('standalone launcher accepts no file metadata and grants no file authority', async () => {
+    const launch = await call('pdf_launch', {});
+    assert.ok(!launch.isError);
+    assert.deepEqual(launch.structuredContent, { viewer: 'fast-pdf-reader', version: '1.1.0', launcher: true });
+    const info = await call('pdf_info', { sourcePath: a, path: a });
+    assert.equal(info.isError, true);
+    assert.equal(info.structuredContent, undefined);
+    assert.equal(info._meta.localPdfErrorCode, 'MISSING_HOST_FILE_CONTEXT');
+    assert.match(errorText(info), /host has not supplied local file context/);
+    assert.ok(!errorText(info).includes(dir));
+  });
+
+  await t.test('dictation preflight opens no microphone and exposes no audio or paths', async () => {
+    const info = await call('pdf_dictation_info');
+    assert.ok(!info.isError);
+    assert.equal(typeof info.structuredContent.available, 'boolean');
+    assert.equal(info.structuredContent.local, true);
+    assert.equal(info.structuredContent.defaultEnabled, true);
+    assert.equal(info.structuredContent.requiresNativeConsent, false);
+    assert.equal(info.structuredContent.activation, 'explicit-inline-button');
+    assert.deepEqual(info.content, []);
+    assert.ok(!JSON.stringify(info).includes(root));
+    assert.equal(info.structuredContent.pcmBase64, undefined);
+    for (const name of ['pdf_dictation_status','pdf_dictation_heartbeat','pdf_dictation_stop']) {
+      const bad = await call(name, {sessionId:'invalid'});
+      assert.equal(bad.isError, true);
+      const absent = await call(name, {sessionId:'0'.repeat(43)});
+      assert.equal(absent.isError, true);
+      assert.ok(!JSON.stringify(absent).includes(root));
+    }
+    for (const args of [{},{sessionId:'bad'},{sessionId:'0'.repeat(43),requestId:'00000000-0000-4000-8000-000000000000'}]) {
+      assert.equal((await call('pdf_dictation_cancel',args)).isError,true);
+    }
+    assert.equal((await call('pdf_dictation_start',{requestId:'invalid'})).isError,true);
   });
 
   await t.test('missing and malformed host context fail without using arbitrary argument paths', async () => {
@@ -70,7 +136,7 @@ test('MCP stdio exposes a read-only app contract and enforces source-scoped read
 
   await t.test('opening input alone cannot establish a persisted file authority', async () => {
     const result = await call('pdf_open', { file: { name: 'synthetic-a.pdfprobe', resourceUri: a } });
-    assert.deepEqual(result.structuredContent, { viewer:'fast-pdf-reader', version:'1.0.0' });
+    assert.deepEqual(result.structuredContent, { viewer:'fast-pdf-reader', version:'1.1.0' });
     const info = await call('pdf_info');
     assert.equal(info.isError, true);
     assert.match(errorText(info), /host has not supplied local file context/);

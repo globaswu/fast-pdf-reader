@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectBundledLicenses } from './scripts/collect-licenses.mjs';
@@ -41,6 +42,21 @@ try {
     'USAGE.txt', 'LICENSE', 'PRIVACY.md', 'THIRD_PARTY.md']) {
     await cp(path.join(root, relative), path.join(staged, relative));
   }
+  const nativeSource = await readFile(path.join(root, 'native-recorder/SmoothPdfRecorder.cs'));
+  const nativeBytes = await readFile(path.join(root, 'native-recorder/bin/SmoothPdfRecorder.exe'));
+  const nativeManifest = JSON.parse(await readFile(path.join(root, 'native-recorder/bin/recorder-manifest.json'), 'utf8'));
+  const sha256 = value => createHash('sha256').update(value).digest('hex');
+  if (nativeManifest.sourceSha256 !== sha256(nativeSource) ||
+      nativeManifest.sha256 !== sha256(nativeBytes) || nativeManifest.bytes !== nativeBytes.length ||
+      nativeManifest.activation !== 'explicit-inline-button' || nativeManifest.nativeWindows !== false ||
+      nativeManifest.startsOnlyOnExplicitCommand !== true) {
+    throw new Error('The packaged native recorder must match its reviewed source and inline-only manifest.');
+  }
+  for (const relative of ['native-recorder/bin/SmoothPdfRecorder.exe', 'native-recorder/bin/recorder-manifest.json',
+    'scripts/install-dictation-runtime.ps1']) {
+    await mkdir(path.dirname(path.join(staged, relative)), { recursive: true });
+    await cp(path.join(root, relative), path.join(staged, relative));
+  }
   const pdfRoot = path.join(root, 'node_modules/pdfjs-dist');
   for (const kind of ['cmaps', 'standard_fonts', 'wasm']) {
     await cp(path.join(pdfRoot, kind), path.join(staged, 'vendor/pdfjs', kind), { recursive: true });
@@ -74,11 +90,16 @@ try {
     if (previous.name !== 'fast-pdf-reader' || previous.private !== true) {
       throw new Error('Refusing to replace a directory without the generated runtime package identity.');
     }
-    // Exact, validated generated output only; no source or workspace parent is removed.
-    await rm(output, { recursive: true });
+    // Keep an exact rollback copy of the previous generated release.
+    const backups = path.join(root, '.release-staging');
+    await mkdir(backups, { recursive: true });
+    if (await realpath(backups) !== path.join(await realpath(root), '.release-staging')) {
+      throw new Error('Release backups must remain inside this source tree.');
+    }
+    await rename(output, path.join(backups, `runtime-before-${packageInfo.version}-${randomUUID()}`));
   }
   await rename(staged, output);
-  console.log(`Bundled Fast PDF Reader ${packageInfo.version}: ${components.length} dependency versions with notices.`);
+  console.log(`Bundled Smooth PDF Reader ${packageInfo.version}: ${components.length} dependency versions with notices.`);
 } finally {
   // This unique path was created by this invocation, directly under plugins.
   await rm(staged, { recursive: true, force: true });

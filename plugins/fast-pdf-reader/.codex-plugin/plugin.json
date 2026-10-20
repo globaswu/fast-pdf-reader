@@ -1,7 +1,7 @@
 {
   "name": "fast-pdf-reader",
-  "version": "1.0.0",
-  "description": "Read local PDFs with smooth continuous scrolling, crisp cached pages, early text selection and contextual change requests in Codex.",
+  "version": "1.1.0",
+  "description": "Read PDFs smoothly, highlight requested changes, queue contextual comments and dictate locally in the optional Windows edition.",
   "author": {"name": "Sen Wu", "url": "https://github.com/globaswu"},
   "homepage": "https://github.com/globaswu/fast-pdf-reader",
   "repository": "https://github.com/globaswu/fast-pdf-reader",
@@ -9,16 +9,16 @@
   "keywords": ["pdf", "reader", "local", "productivity", "codex"],
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Fast PDF Reader",
+    "displayName": "Smooth PDF Reader",
     "shortDescription": "Smooth local PDF reading and contextual comments",
-    "longDescription": "A local desktop PDF reader with continuous scrolling, crisp cached page images, independent text selection, search, bookmarks and a compact single-row toolbar. Select a passage or figure to compose a contextual change request in supported Codex hosts. PDF rendering runs locally; comments and selected content enter the host only when you explicitly add a request. Requires Node.js 22.13 or newer and a compatible desktop host. Windows is the validated platform.",
+    "longDescription": "A local desktop PDF reader with continuous scrolling, crisp cached pages, independent text selection, search, bookmarks and a compact single-row toolbar. Select text or a region to open an inline Ask for change editor. Enter finishes a comment; Shift+Enter adds a line. Requested selections remain highlighted during the reader session, and comments can be collected as context before explicit batch handoff to the dialogue box. Supported host-opened files can notify you when a newer document version is available. Optional Windows x64 dictation uses a plugin-owned recorder and separately installed offline speech model, inserting the transcript into the same editor. Recording starts only after a microphone click and respects Windows permissions. Requires Node.js 22.13 or newer and a compatible desktop host. This package does not modify Codex application files.",
     "developerName": "Sen Wu",
     "category": "Productivity",
-    "capabilities": ["Read local PDFs", "Search and navigate pages", "Compose contextual change requests"],
+    "capabilities": ["Read local PDFs", "Search and navigate pages", "Queue contextual change requests", "Optional offline Windows dictation"],
     "websiteURL": "https://github.com/globaswu/fast-pdf-reader",
     "supportURL": "https://github.com/globaswu/fast-pdf-reader/issues",
     "privacyPolicyURL": "https://github.com/globaswu/fast-pdf-reader/blob/main/PRIVACY.md",
-    "defaultPrompt": ["Open Fast PDF Reader so I can read a local PDF."],
+    "defaultPrompt": ["Open Smooth PDF Reader so I can read a local PDF."],
     "brandColor": "#2868C7"
   }
 }

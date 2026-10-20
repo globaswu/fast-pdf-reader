@@ -1,8 +1,8 @@
 {
   "name": "fast-pdf-reader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Local desktop PDF reader with smooth scrolling and contextual comments.",
+  "description": "Smooth PDF Reader: local PDF reading, queued contextual comments and optional offline Windows dictation.",
   "author": "Sen Wu",
   "license": "MIT",
   "engines": {"node": ">=22.13.0"},

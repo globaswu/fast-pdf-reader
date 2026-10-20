@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "executable": "SmoothPdfRecorder.exe",
+  "sha256": "a069d8b76e435febfd09575149baa8132fe3e18b0334831fecf57a154da828cf",
+  "bytes": 23040,
+  "sourceSha256": "9651f1b34f8765578038b2acb2fa51dfa1deb84887a269bb9743d07d6d741d8a",
+  "captureApi": "Windows WASAPI shared-mode default capture endpoint",
+  "sampleRate": 16000,
+  "channels": 1,
+  "pcmBits": 16,
+  "maxSeconds": 120,
+  "leaseMilliseconds": 8000,
+  "interactionMode": "inline-only",
+  "activation": "explicit-inline-button",
+  "requiresNativeConsent": false,
+  "nativeWindows": false,
+  "startsOnlyOnExplicitCommand": true
+}

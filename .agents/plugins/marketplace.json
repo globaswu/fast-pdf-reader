@@ -1,6 +1,6 @@
 {
   "name": "fast-pdf-reader",
-  "interface": {"displayName": "Fast PDF Reader"},
+  "interface": {"displayName": "Smooth PDF Reader"},
   "plugins": [
     {
       "name": "fast-pdf-reader",

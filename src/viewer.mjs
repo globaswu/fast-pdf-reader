@@ -9,21 +9,24 @@ import { BlockRangeReader } from './range-reader.mjs';
 import { EarlyTextLayerController } from './early-text-layer.mjs';
 import { closePdfWorker } from './worker-lifecycle.mjs';
 import { initializeToolbar } from './toolbar.mjs';
+import { createDocumentVersionMonitor } from './document-version.mjs';
+import { initializeLinkTextSelection } from './link-text-selection.mjs';
 
 const $ = id => document.getElementById(id);
 const disposeToolbar=initializeToolbar(document);
 window.addEventListener('pagehide',disposeToolbar,{once:true});
 const preview = new URL(location.href).searchParams.get('preview') === '1';
-const app = preview ? null : new App({name:'fast-pdf-reader',version:'1.0.0'}, {}, {autoResize:false});
+const app = preview ? null : new App({name:'fast-pdf-reader',version:'1.1.0'}, {}, {autoResize:false});
 const extensions = app ? new OpenAIExtensions(app) : null;
 const state = {info:null, resourceUri:null, task:null, doc:null, range:null,
-  outlineLoaded:false, connected:preview, pendingOpen:false, generation:0, disposed:false, localFile:null, workerStatus:'not-started'};
+  outlineLoaded:false, connected:preview, pendingOpen:false, generation:0, openingEpoch:0, disposed:false, localFile:null, workerStatus:'not-started'};
 const metrics = {rangeRequests:0, bytesRead:0, pagesRendered:0, longTasks:0, longTaskMs:0, openedAt:0, firstPageMs:null};
 const container = $('viewer-container');
 const motion=createMotionDiagnostics();
 container.addEventListener('scroll',motion.noteInput,{passive:true});
 container.addEventListener('wheel',motion.noteInput,{passive:true});
 const eventBus = new EventBus();
+const linkSelection = initializeLinkTextSelection({container,eventBus});
 const linkService = new PDFLinkService({eventBus, externalLinkTarget:2, externalLinkRel:'noopener noreferrer'});
 const findController = new PDFFindController({eventBus,linkService});
 const pdfViewer = new PDFViewer({
@@ -40,8 +43,18 @@ $('status').after(previewStatus);
 const previews=new PagePreviewController({pdfViewer,eventBus,getPinnedPages:()=>feedback.pinnedPages(),getWasm:async()=>decodeBase64((await callTool('pdf_asset',{kind:'preview_engine',name:'pdfium.wasm'})).base64),onProgress:info=>{
   previewStatus.textContent=info.state==='loading'?'Preparing fast-scroll cache…':info.state==='preparing'?`Page previews ${info.preparedPages}/${info.pageCount}`:info.state==='ready'?'Fast-scroll cache ready':info.state==='failed'?'Preview cache unavailable':'';
 }});
-const feedback=createFeedbackController({container,pdfViewer,getDocumentInfo:()=>state.info,getResourceUri:()=>state.localFile?null:state.resourceUri,app,extensions,status});
+const feedback=createFeedbackController({container,pdfViewer,eventBus,getDocumentInfo:()=>state.info,getResourceUri:()=>state.localFile?null:state.resourceUri,app,extensions,status,callTool});
 const earlyText=new EarlyTextLayerController({pdfViewer,eventBus,container,TextLayer:pdfjs.TextLayer,normalizeUnicode:pdfjs.normalizeUnicode,isSelectionPinned:div=>feedback.isSelectionPinned(div)});
+const versions=createDocumentVersionMonitor({readInfo:()=>callTool('pdf_info'),isVisible:()=>!document.hidden,onChange:updateVersionNotice});
+
+function updateVersionNotice(version=versions.snapshot()){
+  const changed=version.status!=='current';
+  $('document-update').hidden=!changed;
+  $('document-update-text').textContent=version.status==='changed'?'New PDF version available.':version.status==='checking'?'The PDF is being updated. Waiting for the file to settle…':'The PDF is temporarily unavailable or still being written. The current view has been kept.';
+  $('open-new-version').disabled=state.opening||version.status!=='changed';
+  $('open-new-version').textContent=state.opening?'Opening…':'Open new version';
+  $('reload').classList.toggle('file-changed',changed);
+}
 
 function status(message, error=false) { $('status').textContent=message; $('status').dataset.error=String(error); }
 function decodeBase64(value) {
@@ -50,15 +63,15 @@ function decodeBase64(value) {
   for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
   return bytes;
 }
-async function callTool(name,args={}) {
+async function callTool(name,args={},options={}) {
   let result;
   if(preview) {
     const token=document.querySelector('meta[name="local-preview-token"]')?.content;
     if(!token) throw new Error('Preview token is missing; start the local preview server.');
-    const response=await fetch('/api/tool',{method:'POST',headers:{'Content-Type':'application/json','X-Preview-Token':token},body:JSON.stringify({name,arguments:args})});
+    const response=await fetch('/api/tool',{method:'POST',headers:{'Content-Type':'application/json','X-Preview-Token':token},body:JSON.stringify({name,arguments:args}),signal:options.signal});
     if(!response.ok) throw new Error(`Local ${name} failed (${response.status}).`);
     result=await response.json();
-  } else result=await app.callServerTool({name,arguments:args});
+  } else result=await app.callServerTool({name,arguments:args},options);
   if(result.isError || !result.structuredContent){
     const detail=(result.content||[]).filter(item=>item.type==='text').map(item=>item.text).join(' ').trim();
     const error=new Error(detail||`Local ${name} returned no structured data (response fields: ${Object.keys(result||{}).join(', ')||'none'}).`);
@@ -96,7 +109,7 @@ function createWorker(kind='graphics') {
   // A real module worker is mandatory. No silent main-thread fake-worker fallback.
   const workerField=kind==='text'?'textWorker':'worker',taskField=kind==='text'?'textTask':'task',statusField=kind==='text'?'textWorkerStatus':'workerStatus';
   const worker=new Worker(workerUrl,{type:'module',name:kind==='text'?'local-pdf-selectable-text':'local-pdfjs-renderer'});
-  state[statusField]='starting';
+  if(kind!=='candidate')state[statusField]='starting';
   worker.addEventListener('error',()=>{if(state[workerField]!==worker)return;state[statusField]='failed';worker.terminate();state[workerField]=null;const failedTask=state[taskField];state[taskField]=null;failedTask?.destroy().catch(()=>{});status(kind==='text'?'The independent text worker failed; the standard text layer remains available.':'The local PDF worker could not start or stopped. No main-thread fallback was used.',true);if(kind==='text'&&state.doc)void earlyText.setDocument(state.doc);});
   return worker;
 }
@@ -123,77 +136,98 @@ async function prepareIndependentText(bytes,generation){
   }
 }
 async function openDocument() {
+  if(state.disposed)return;
   if(!state.connected) {state.pendingOpen=true;return;}
-  const generation=++state.generation;
-  const previousPage=state.resetPage?1:pdfViewer.currentPageNumber || 1;
-  state.resetPage=false;
+  const openingEpoch=++state.openingEpoch;
+  const resetPage=state.resetPage,requestedFile=state.localFile,requestedUri=state.resourceUri,requestedName=state.resourceName;
+  let candidateTask=null,candidateWorker=null,candidateRange=null,committed=false;
+  let failCandidate;
+  const candidateFailure=new Promise((resolve,reject)=>{failCandidate=reject;});
+  candidateFailure.catch(()=>{});
+  const candidateTimeout=setTimeout(()=>failCandidate(new Error('PDF opening timed out. Try opening the file again.')),60000);
+  const awaitCandidate=promise=>Promise.race([promise,candidateFailure]);
+  const onCandidateWorkerError=()=>failCandidate(new Error('The new PDF worker could not start or stopped while opening.'));
+  state.opening=true;feedback.setDocumentOpening(true);updateVersionNotice();
   status('Opening the local PDF…');
-  previews.stop();
-  earlyText.stop();
-  const priorTextTask=state.textTask;state.textTask=null;
-  const priorTextWorker=state.textWorker;state.textWorker=null;state.textWorkerStatus='not-started';
-  state.textWorkerError=null;
-  feedback.onViewChanged();
-  const previousRange=state.range;state.range=null;previousRange?.abort();
-  state.doc=null;
-  pdfViewer.setDocument(null); linkService.setDocument(null); findController.setDocument(null);
-  const previousTask=state.task;state.task=null;
-  const previousWorker=state.worker;state.worker=null;
-  state.workerStatus='terminated';
-  // Detach every old handle before awaiting cleanup: overlapping reloads must
-  // never resume and accidentally destroy the newer document's live workers.
-  await Promise.all([
-    closePdfWorker(priorTextTask,priorTextWorker),
-    closePdfWorker(previousTask,previousWorker),
-  ]);
-  if(generation!==state.generation)return;
-  let info,data;
-  if(state.localFile){
-    state.sourceKind='local-file';
-    const file=state.localFile;
+  try{
+  let info,data,sourceKind;
+  if(requestedFile){
+    sourceKind='local-file';
+    const file=requestedFile;
     if(file.size>512*1024*1024)throw new Error('The local file picker is limited to 512 MiB; use a host file entrypoint for larger files.');
-    data=new Uint8Array(await file.arrayBuffer());
-    const digest=await crypto.subtle.digest('SHA-256',data);
+    data=new Uint8Array(await awaitCandidate(file.arrayBuffer()));
+    const digest=await awaitCandidate(crypto.subtle.digest('SHA-256',data));
     const documentId=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
     info={documentId,name:file.name,size:file.size,modifiedMs:file.lastModified,sourcePath:null};
   }else{
-    try{info=await callTool('pdf_info');state.sourceKind='host-path';}
+    try{info=await awaitCandidate(callTool('pdf_info'));sourceKind='host-path';}
     catch(error){
-      if(error.code!=='MISSING_HOST_FILE_CONTEXT'||!extensions?.resources||!state.resourceUri)throw error;
+      if(error.code!=='MISSING_HOST_FILE_CONTEXT'||!extensions?.resources||!requestedUri)throw error;
       // Public host-owned resource access is the primary standard file API.
       // Use it only when the host omitted its optional server filesystem path;
       // never as a fallback for denied access or an unrelated filesystem error.
-      const resource=await extensions.resources.read({uri:state.resourceUri,representation:'blob'});
-      const content=resource.contents.find(item=>item.uri===state.resourceUri&&typeof item.blob==='string')||(resource.contents.length===1&&typeof resource.contents[0].blob==='string'?resource.contents[0]:null);
+      const resource=await awaitCandidate(extensions.resources.read({uri:requestedUri,representation:'blob'}));
+      const content=resource.contents.find(item=>item.uri===requestedUri&&typeof item.blob==='string')||(resource.contents.length===1&&typeof resource.contents[0].blob==='string'?resource.contents[0]:null);
       if(!content)throw new Error('The host did not provide binary PDF data for the selected resource. Reopen the PDF or use Open PDF.');
       data=decodeBase64(content.blob);
-      state.sourceKind='host-resource';
-      const digest=await crypto.subtle.digest('SHA-256',data);
-      info={documentId:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join(''),name:state.resourceName||'Selected PDF',size:data.byteLength,modifiedMs:null,sourcePath:null};
+      sourceKind='host-resource';
+      const digest=await awaitCandidate(crypto.subtle.digest('SHA-256',data));
+      info={documentId:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join(''),name:requestedName||'Selected PDF',size:data.byteLength,modifiedMs:null,sourcePath:null};
     }
   }
-  if(generation!==state.generation)return;
+  if(openingEpoch!==state.openingEpoch)return;
   if(!Number.isSafeInteger(info.size)||info.size<=0||typeof info.documentId!=='string')throw new Error('Invalid PDF metadata.');
-  state.info=info; state.doc=null; state.outlineLoaded=false; $('outline').textContent='Open the outline to load bookmarks.';
-  $('document-name').textContent=info.name; $('document-name').title=info.name; document.title=`${info.name} · Fast PDF Reader`;
-  metrics.openedAt=performance.now(); metrics.firstPageMs=null;
-  state.worker=createWorker();
-  const worker=pdfjs.PDFWorker.create({port:state.worker});
-  await worker.promise;
-  if(generation!==state.generation){await worker.destroy();return;}
-  state.workerStatus='ready';
-  const range=data?null:new LocalRangeTransport(info,error=>{status(error.message,true);state.task?.destroy().catch(()=>{});});
-  state.range=range;
-  const task=pdfjs.getDocument({...(data?{data}:{range}),worker,rangeChunkSize:256*1024,enableHWA:true,
+  candidateWorker=createWorker('candidate');
+  candidateWorker.addEventListener('error',onCandidateWorkerError);
+  const worker=pdfjs.PDFWorker.create({port:candidateWorker});
+  await awaitCandidate(worker.promise);
+  if(openingEpoch!==state.openingEpoch)return;
+  candidateRange=data?null:new LocalRangeTransport(info,error=>{
+    if(!committed){failCandidate(error);candidateTask?.destroy().catch(()=>{});return;}
+    if(state.task!==candidateTask)return;
+    status(error.message,true);
+    if(/^Document changed/.test(error.message))versions.notify();
+    else candidateTask?.destroy().catch(()=>{});
+  });
+  candidateTask=pdfjs.getDocument({...(data?{data}:{range:candidateRange}),worker,rangeChunkSize:256*1024,enableHWA:true,
     disableAutoFetch:true,disableStream:true,useWorkerFetch:false,BinaryDataFactory:LocalBinaryDataFactory,
     cMapUrl:'local-assets:/cmaps/',cMapPacked:true,standardFontDataUrl:'local-assets:/standard_fonts/',wasmUrl:'local-assets:/wasm/',
     isEvalSupported:false,enableXfa:false,stopAtErrors:false});
-  state.task=task;
-  task.onPassword=()=>{status('Password-protected PDFs are not supported in this release.',true);task.destroy().catch(()=>{});};
-  const loadedDocument=await task.promise;
-  if(generation!==state.generation)return;
+  candidateTask.onPassword=()=>{failCandidate(new Error('Password-protected PDFs are not supported in this reader.'));candidateTask.destroy().catch(()=>{});};
+  const loadedDocument=await awaitCandidate(candidateTask.promise);
+  if(openingEpoch!==state.openingEpoch)return;
+  await awaitCandidate(Promise.all([loadedDocument.getPage(1),loadedDocument.getPermissions()]));
+  if(openingEpoch!==state.openingEpoch)return;
+  // Parse the replacement first. A missing, locked or invalid file leaves the
+  // previous document, workers and comment queue intact.
+  if(sourceKind==='host-path'){
+    const latest=await awaitCandidate(callTool('pdf_info'));
+    if(latest.documentId!==info.documentId)throw new Error('The PDF changed while opening. Try again after the file finishes updating.');
+  }
+  if(openingEpoch!==state.openingEpoch)return;
+  const previousPage=resetPage?1:pdfViewer.currentPageNumber||1;
+  const previousScale=resetPage?'page-width':pdfViewer.currentScaleValue||'page-width';
+  const previousElement=pdfViewer.getPageView(previousPage-1)?.div;
+  const pageFraction=!resetPage&&previousElement?.clientHeight?Math.max(0,(container.scrollTop-previousElement.offsetTop)/previousElement.clientHeight):0;
+  const generation=++state.generation;
+  previews.stop();earlyText.stop();feedback.onViewChanged();
+  const priorTextTask=state.textTask,priorTextWorker=state.textWorker,previousTask=state.task,previousWorker=state.worker;
+  state.range?.abort();
+  state.textTask=null;state.textWorker=null;state.textWorkerStatus='not-started';state.textWorkerError=null;
+  pdfViewer.setDocument(null);linkService.setDocument(null);findController.setDocument(null);
+  state.info=info;state.sourceKind=sourceKind;state.outlineLoaded=false;state.resetPage=false;
+  state.loadedSource={localFile:requestedFile,resourceUri:requestedUri,resourceName:requestedName};
+  state.worker=candidateWorker;state.task=candidateTask;state.range=candidateRange;state.workerStatus='ready';
   state.doc=loadedDocument;
+  committed=true;
+  candidateWorker.removeEventListener('error',onCandidateWorkerError);
+  // Close detached handles only; cleanup can never terminate the new workers.
+  void Promise.all([closePdfWorker(priorTextTask,priorTextWorker),closePdfWorker(previousTask,previousWorker)]);
+  $('outline').textContent='Open the outline to load bookmarks.';
+  $('document-name').textContent=info.name;$('document-name').title=info.name;document.title=`${info.name} · Smooth PDF Reader`;
+  metrics.openedAt=performance.now();metrics.firstPageMs=null;
   feedback.onDocumentChanged();
+  versions.setDocument(info,{poll:sourceKind==='host-path'});
   linkService.setDocument(state.doc);
   pdfViewer.setDocument(state.doc);
   void earlyText.setDocument(state.doc);
@@ -213,15 +247,43 @@ async function openDocument() {
   for(const id of ['previous','next','page-number','zoom-out','zoom','zoom-in','find-toggle','reload','region-toggle']) $(id).disabled=false;
   $('open-folder').disabled=preview||!info.sourcePath;
   $('open-default').disabled=preview||!info.sourcePath;
-  await pdfViewer.firstPagePromise;
-  if(generation!==state.generation)return;
-  pdfViewer.currentScaleValue='page-width';
+  await awaitCandidate(pdfViewer.firstPagePromise);
+  if(openingEpoch!==state.openingEpoch||generation!==state.generation)return;
+  pdfViewer.currentScaleValue=previousScale;
   pdfViewer.currentPageNumber=Math.min(previousPage,state.doc.numPages);
-  status(`${state.doc.numPages} pages · Fast PDF Reader · ${info.sourcePath?'host-selected local file':state.sourceKind==='host-resource'?'host-selected resource (filesystem path unavailable)':'local file picker (full path not provided by browser)'}`);
+  const page=pdfViewer.getPageView(pdfViewer.currentPageNumber-1)?.div;
+  if(page&&pageFraction&&previousPage<=state.doc.numPages)container.scrollTop=page.offsetTop+Math.min(pageFraction,1)*page.clientHeight;
+  status(`${state.doc.numPages} pages · Smooth PDF Reader · ${info.sourcePath?'host-selected local file':state.sourceKind==='host-resource'?'host-selected resource (filesystem path unavailable)':'local file picker (full path not provided by browser)'}`);
   feedback.updateCapabilities();
   if(!$('outline-panel').hidden)loadOutline().catch(error=>status(error.message,true));
+  }catch(error){
+    if(openingEpoch!==state.openingEpoch||state.disposed)return;
+    if(!committed&&state.loadedSource)Object.assign(state,state.loadedSource,{resetPage:false});
+    throw error;
+  }finally{
+    clearTimeout(candidateTimeout);
+    candidateWorker?.removeEventListener('error',onCandidateWorkerError);
+    if(!committed){candidateRange?.abort();await closePdfWorker(candidateTask,candidateWorker);}
+    if(openingEpoch===state.openingEpoch&&!state.disposed){state.opening=false;feedback.setDocumentOpening(false);updateVersionNotice();}
+  }
 }
-function requestOpen(){openDocument().catch(error=>status(`Unable to open PDF: ${error.message}`,true));}
+function requestOpen(){const pending=openDocument(),openingEpoch=state.openingEpoch;return pending.catch(error=>{if(openingEpoch===state.openingEpoch&&!state.disposed)status(`Unable to open PDF: ${error.message}${state.doc?' The current version is still open.':''}`,true);});}
+
+function requestVersionOpen(){
+  if(state.opening)return;
+  if(feedback.diagnostics().busy){status('Wait for the current comment-context update to finish before opening another version.',true);return;}
+  const count=feedback.diagnostics().requestCount;
+  if(count){
+    $('version-change-warning').textContent=`You have ${count} collected comment${count===1?'':'s'} tied to this PDF revision. If the revision changed, opening it will clear these comments and their current context attachment. Send your chat message first if you still need them.`;
+    $('version-change-dialog').showModal();return;
+  }
+  void requestOpen();
+}
+$('open-new-version').onclick=requestVersionOpen;
+$('version-keep-current').onclick=()=>$('version-change-dialog').close();
+$('version-confirm-open').onclick=()=>{$('version-change-dialog').close();void requestOpen();};
+window.addEventListener('focus',()=>versions.check());
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)versions.check();});
 
 eventBus.on('pagesinit',()=>{pdfViewer.currentScaleValue='page-width';});
 eventBus.on('pagechanging',({pageNumber})=>{if(document.activeElement!==$('page-number'))$('page-number').value=pageNumber;feedback.onViewChanged();previews.setFocus(pageNumber);});
@@ -252,9 +314,10 @@ $('page-number').onkeydown=event=>{if(event.key==='Enter'){event.preventDefault(
 $('zoom').onchange=()=>{if($('zoom').value!=='custom')pdfViewer.currentScaleValue=$('zoom').value;};
 $('zoom-in').onclick=()=>pdfViewer.increaseScale({steps:1});
 $('zoom-out').onclick=()=>pdfViewer.decreaseScale({steps:1});
-$('reload').onclick=requestOpen;
+$('reload').onclick=requestVersionOpen;
 $('choose-file').onclick=()=>$('local-file-input').click();
-$('local-file-input').onchange=()=>{const file=$('local-file-input').files?.[0];if(file){state.localFile=file;state.resetPage=true;requestOpen();}};
+$('choose-file-start').onclick=()=>$('local-file-input').click();
+$('local-file-input').onchange=()=>{const file=$('local-file-input').files?.[0];$('local-file-input').value='';if(file){state.localFile=file;state.resetPage=true;requestOpen();}};
 for(const [id,action] of [['open-folder','folder'],['open-default','default']])$(id).onclick=()=>{
   if(!state.info?.sourcePath)return;
   callTool('pdf_open_external',{documentId:state.info.documentId,action}).then(()=>status(action==='folder'?'Opened the PDF location in Explorer.':'Requested the default PDF application.')).catch(error=>status(error.message,true));
@@ -278,7 +341,7 @@ async function loadOutline() {
 }
 $('outline-toggle').onclick=()=>{$('outline-panel').hidden=!$('outline-panel').hidden;$('outline-toggle').setAttribute('aria-expanded',String(!$('outline-panel').hidden));if(!$('outline-panel').hidden)loadOutline().catch(error=>status(error.message,true));pdfViewer.update();};
 function openExternal(url) {try{const parsed=new URL(url);if(!['https:','http:','mailto:'].includes(parsed.protocol))throw new Error('Unsupported external-link protocol.');if(app)app.openLink({url:parsed.href}).catch(error=>status(error.message,true));else window.open(parsed.href,'_blank','noopener,noreferrer');}catch(error){status(error.message,true);}}
-container.addEventListener('click',event=>{const a=event.target.closest('a[href]');if(a&&/^https?:|^mailto:/i.test(a.href)){event.preventDefault();event.stopPropagation();openExternal(a.href);}},true);
+container.addEventListener('click',event=>{const a=event.target.closest('a[href]');if(a&&!a.closest('[data-internal-link]')&&/^https?:|^mailto:/i.test(a.href)){event.preventDefault();event.stopPropagation();openExternal(a.href);}},true);
 
 let subscribedUri=null,removeUpdateHandler=null;
 async function subscribeToFile(){
@@ -288,13 +351,13 @@ async function subscribeToFile(){
   removeUpdateHandler?.();
   subscribedUri=state.resourceUri;
   removeUpdateHandler=extensions.resources.addUpdateHandler(notification=>{
-    if(notification.params.uri===subscribedUri&&!state.localFile){$('reload').classList.add('file-changed');status('The PDF changed on disk. Reload when ready; the current view and unsent requests are preserved.');}
+    if(notification.params.uri===subscribedUri&&!state.localFile)versions.notify();
   });
-  await extensions.resources.subscribe({uri:subscribedUri}).catch(()=>{status('Automatic file-change notifications are unavailable; use Reload after rebuilding the PDF.');});
+  await extensions.resources.subscribe({uri:subscribedUri}).catch(()=>{});
 }
-function applyContext(context){if(context?.theme)applyDocumentTheme(context.theme);if(context?.styles?.variables)applyHostStyleVariables(context.styles.variables);feedback.updateCapabilities();}
+function applyContext(context){if(context?.theme)applyDocumentTheme(context.theme);if(context?.styles?.variables)applyHostStyleVariables(context.styles.variables);feedback.onHostContextChanged(context);}
 if(app){
-  app.ontoolinput=({arguments:args})=>{const input=OpenAIFileEntrypointInputSchema.safeParse(args);if(!input.success){status('Choose Open PDF to read a local file. PDF rendering stays local.');return;}state.localFile=null;state.resourceUri=input.data.file.resourceUri;state.resourceName=input.data.file.name;requestOpen();subscribeToFile().catch(()=>{});};
+  app.ontoolinput=({arguments:args})=>{const input=OpenAIFileEntrypointInputSchema.safeParse(args);if(!input.success){if(!state.doc){$('empty-state').hidden=false;status('Choose Open PDF. Comments attach to this reader’s chat.');}return;}if(!state.localFile&&state.resourceUri===input.data.file.resourceUri&&state.doc){versions.notify();return;}state.localFile=null;state.resourceUri=input.data.file.resourceUri;state.resourceName=input.data.file.name;requestOpen();subscribeToFile().catch(()=>{});};
   app.ontoolresult=()=>{};
   app.addEventListener('hostcontextchanged',applyContext);
   app.connect().then(()=>{state.connected=true;applyContext(app.getHostContext());if(state.pendingOpen){state.pendingOpen=false;requestOpen();}subscribeToFile().catch(()=>{});}).catch(error=>status(`Codex viewer connection failed: ${error.message}`,true));
@@ -320,10 +383,10 @@ const resizeObserver=new ResizeObserver(()=>{
 });
 resizeObserver.observe(container);
 // Read-only local diagnostics for the manual test harness, never model context.
-function diagnosticSnapshot(){return{version:'1.0.0',pdfjsVersion:pdfjs.version,preview,physicalPage:pdfViewer.currentPageNumber,pageCount:state.doc?.numPages||0,scale:pdfViewer.currentScale,workerStatus:state.workerStatus,textWorkerStatus:state.textWorkerStatus,textWorkerError:state.textWorkerError,metrics:{...metrics},motion:motion.snapshot(),previews:previews.snapshot(),earlyText:earlyText.snapshot(),byteReader:state.range?.reader.snapshot(),surfaces:snapshotCanvasSurfaces(pdfViewer.getCachedPageViews()),canvasTargetBytes:CANVAS_TARGET,host:app?.getHostVersion?.(),hostCapabilities:app?.getHostCapabilities?.(),feedback:feedback.diagnostics()};}
+function diagnosticSnapshot(){return{version:'1.1.0',pdfjsVersion:pdfjs.version,preview,physicalPage:pdfViewer.currentPageNumber,pageCount:state.doc?.numPages||0,scale:pdfViewer.currentScale,workerStatus:state.workerStatus,textWorkerStatus:state.textWorkerStatus,textWorkerError:state.textWorkerError,metrics:{...metrics},motion:motion.snapshot(),previews:previews.snapshot(),earlyText:earlyText.snapshot(),byteReader:state.range?.reader.snapshot(),surfaces:snapshotCanvasSurfaces(pdfViewer.getCachedPageViews()),canvasTargetBytes:CANVAS_TARGET,host:app?.getHostVersion?.(),hostCapabilities:app?.getHostCapabilities?.(),feedback:feedback.diagnostics(),documentVersion:versions.snapshot()};}
 Object.defineProperty(window,'localPdfDiagnostics',{value:diagnosticSnapshot});
 const diagnosticButton=document.createElement('button');diagnosticButton.textContent='Refresh diagnostics';diagnosticButton.id='refresh-diagnostics';
 const diagnosticOutput=document.createElement('pre');diagnosticOutput.id='diagnostic-output';diagnosticOutput.style.cssText='max-height:160px;overflow:auto;white-space:pre-wrap';
 diagnosticButton.onclick=()=>{diagnosticOutput.textContent=JSON.stringify(diagnosticSnapshot(),null,2);};$('capabilities').append(diagnosticButton,diagnosticOutput);
-window.addEventListener('pagehide',()=>{state.disposed=true;earlyText.dispose();previews.dispose();removeUpdateHandler?.();if(subscribedUri)extensions?.resources?.unsubscribe({uri:subscribedUri}).catch(()=>{});resizeObserver.disconnect();longTaskObserver?.disconnect();motion.dispose();feedback.dispose();state.range?.abort();state.task?.destroy().catch(()=>{});state.textTask?.destroy().catch(()=>{});state.textWorker?.terminate();state.worker?.terminate();state.workerStatus='terminated';if(workerUrl)URL.revokeObjectURL(workerUrl);},{once:true});
+window.addEventListener('pagehide',()=>{state.disposed=true;state.openingEpoch++;state.generation++;linkSelection.dispose();versions.dispose();earlyText.dispose();previews.dispose();removeUpdateHandler?.();if(subscribedUri)extensions?.resources?.unsubscribe({uri:subscribedUri}).catch(()=>{});resizeObserver.disconnect();longTaskObserver?.disconnect();motion.dispose();feedback.dispose();state.range?.abort();state.task?.destroy().catch(()=>{});state.textTask?.destroy().catch(()=>{});state.textWorker?.terminate();state.worker?.terminate();state.workerStatus='terminated';if(workerUrl)URL.revokeObjectURL(workerUrl);},{once:true});
 feedback.updateCapabilities();

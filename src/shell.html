@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="local-preview-token" content="">
-  <title>Local Fast PDF</title>
+  <title>Smooth PDF Reader</title>
   <style>/* INLINE_STYLE */</style>
 </head>
 <body>
@@ -51,6 +51,10 @@
       </details>
     </div>
   </header>
+  <section id="document-update" hidden aria-label="Document update">
+    <span id="document-update-text" role="status">New PDF version available.</span>
+    <button id="open-new-version" type="button">Open new version</button>
+  </section>
   <section id="findbar" hidden aria-label="Find in document">
     <label for="find-query">Find</label><input id="find-query" type="search" autocomplete="off">
     <button id="find-previous" title="Previous match">↑</button><button id="find-next" title="Next match">↓</button>
@@ -61,38 +65,56 @@
     <aside id="outline-panel" hidden aria-label="Document outline"><h2>Contents</h2><div id="outline">Open the outline to load bookmarks.</div></aside>
     <section id="pdf-panel" aria-label="PDF document">
       <div id="viewer-container" tabindex="0"><div id="viewer" class="pdfViewer"></div></div>
-      <div id="empty-state"><h1>Local PDF reader</h1><p>Waiting for the Codex file-viewer entrypoint.</p></div>
+      <div id="empty-state">
+        <h1>Smooth PDF Reader</h1>
+        <p>Choose a PDF on this computer, including a file saved from dots. The document is opened locally.</p>
+        <button id="choose-file-start" type="button">Open PDF</button>
+        <p class="launcher-note">In standalone mode, comments go to this reader’s companion chat—not automatically to the original dot conversation.</p>
+      </div>
     </section>
     <aside id="feedback-panel" hidden aria-label="Collected change requests">
       <h2>Change requests</h2>
       <p id="feedback-attachment-status" role="status">No requests collected.</p>
-      <p class="feedback-hint">Comments added to the chat draft are edited or removed there. This viewer never submits the draft for you.</p>
+      <button id="feedback-send" type="button" disabled aria-describedby="feedback-send-help">Send to dialogue box</button>
+      <p id="feedback-send-help" class="feedback-hint">Attach all comments as context. Your input text stays unchanged; nothing is submitted automatically.</p>
       <ol id="feedback-list"></ol>
       <button id="feedback-clear" disabled>Clear all requests</button>
+      <p class="feedback-hint">Comments are held for this reader session. Send your message before closing the reader or changing PDF revisions. Clearing here also removes this reader’s current context attachment.</p>
     </aside>
   </main>
   <div id="selection-actions" role="toolbar" aria-label="Selected PDF text actions" hidden>
-    <button id="request-change" aria-label="Ask for change" title="Ask for change (Ctrl+I)">Ask for change <kbd>Ctrl I</kbd></button>
+    <button id="request-change" aria-label="Ask for change" title="Ask for change (Ctrl+Shift+X)">Ask for change <kbd>Ctrl Shift X</kbd></button>
   </div>
   <footer>
     <span id="status" role="status" aria-live="polite">Starting local renderer…</span>
     <details id="capabilities"><summary>Integration status</summary>
       <p id="capability-status">Checking host capabilities.</p>
       <p>Mozilla PDF.js; a separate local worker; continuous native scrolling. No PDF JavaScript execution and no remote document service.</p>
-      <p>The selection popup uses the host’s advertised unsent-draft interface. It does not embed or modify the built-in PDF editor.</p>
+      <p>Ask for change opens a compact inline editor. Its microphone uses a local Windows recorder and offline recognition to insert speech directly here. Recording starts only when you click the microphone; all controls stay in this input. Enter or Stop finishes recording, while Cancel discards it without changing your typed text. Review the transcript and press Enter again to save it for your batch. Windows microphone privacy settings still apply. Nothing is sent automatically.</p>
     </details>
   </footer>
   <dialog id="feedback-dialog" aria-labelledby="feedback-dialog-title">
     <form id="feedback-form">
-      <h2 id="feedback-dialog-title">Ask for change</h2>
-      <p id="feedback-selection-summary"></p>
-      <blockquote id="feedback-selected-text"></blockquote>
-      <label for="feedback-comment">Your requested change</label>
-      <textarea id="feedback-comment" rows="3" maxlength="2000" required placeholder="Describe what you want changed…"></textarea>
-      <p id="feedback-dialog-help" class="feedback-hint">Your selection, PDF source, physical page location, and comment will be attached to chat context. You still choose when to send your message.</p>
+      <h2 id="feedback-dialog-title" class="sr-only">Ask for change</h2>
+      <p id="feedback-selection-summary" class="sr-only"></p>
+      <blockquote id="feedback-selected-text" class="sr-only"></blockquote>
+      <label for="feedback-comment" class="sr-only">Your requested change</label>
+      <div class="inline-comment-row">
+        <textarea id="feedback-comment" rows="1" required aria-describedby="feedback-dialog-help feedback-dictation-status" placeholder="Describe a change or ask a question"></textarea>
+        <button id="feedback-voice" type="button" class="inline-comment-action" data-state="idle" aria-label="Dictate in this input" title="Dictate here with the local Windows microphone recorder" aria-pressed="false"><svg class="dictation-mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3M9 21h6"/></svg><svg class="dictation-stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><svg class="dictation-cancel-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        <button id="feedback-dictation-cancel" type="button" class="inline-comment-action" aria-label="Cancel dictation" title="Discard dictation and keep your typed text" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        <button id="feedback-save" type="submit" class="inline-comment-action" aria-label="Save comment" title="Save comment (Enter)" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+      </div>
+      <p id="feedback-dialog-help" class="sr-only">Enter to save; Shift+Enter for a new line; Escape to close. Click the microphone to dictate into this input. Enter or Stop finishes recording; Cancel discards dictation and preserves typed text. Review dictated text before saving.</p>
+      <p id="feedback-dictation-status" role="status" aria-live="polite" hidden></p>
       <p id="feedback-dialog-error" role="alert"></p>
-      <div class="feedback-dialog-actions"><button id="feedback-cancel" type="button">Cancel</button><button id="feedback-save" type="submit">Attach request</button></div>
+      <button id="feedback-cancel" type="button" class="sr-only inline-cancel">Cancel</button>
     </form>
+  </dialog>
+  <dialog id="version-change-dialog" aria-labelledby="version-change-title">
+    <h2 id="version-change-title">Open the updated PDF?</h2>
+    <p id="version-change-warning"></p>
+    <div class="feedback-dialog-actions"><button id="version-keep-current" type="button" autofocus>Keep current version</button><button id="version-confirm-open" type="button">Discard old comments and open</button></div>
   </dialog>
   <script type="module">/* INLINE_SCRIPT */</script>
 </body>
